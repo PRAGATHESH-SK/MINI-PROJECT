@@ -9,6 +9,7 @@
     "dev:client": "npm --prefix client run dev",
     "build": "npm --prefix server run build && npm --prefix client run build",
     "start": "npm --prefix server run start",
+    "live": "node start_public_hosting.mjs",
     "db:push": "npm --prefix server run prisma:push",
     "db:seed": "npm --prefix server run seed",
     "seed": "npm --prefix server run seed",
