@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  EMPLOYER
+  ADMIN
+}
+
+enum InternshipStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  REJECTED
+  ARCHIVED
+}
+
+enum InternshipType {
+  ON_SITE
+  HYBRID
+  REMOTE
+}
+
+enum ApplicationStatus {
+  APPLIED
+  REVIEWING
+  SHORTLISTED
+  SELECTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  COMPLETED
+  TERMINATED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  HALF_DAY
+  LATE
+  IRREGULAR
+}
+
+enum AttemptType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  isVerified   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  studentProfile      StudentProfile?
+  companyProfile      CompanyProfile?
+  createdInternships  Internship[]             @relation("EmployerInternships")
+  applications        InternshipApplication[]  @relation("StudentApplications")
+  assignments         InternshipAssignment[]   @relation("StudentAssignments")
+  attendanceRecords   AttendanceRecord[]       @relation("StudentAttendance")
+  attendanceAttempts  AttendanceAttempt[]      @relation("StudentAttempts")
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+
+  @@index([role, isVerified, isActive])
+  @@index([email])
+}
+
+model StudentProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName           String
+  registerNumber     String?
+  collegeName        String
+  degree             String
+  department         String
+  yearOfStudy        Int      @default(3)
+  district           String
+  city               String
+  skills             String   // Comma separated or JSON string
+  resumeUrl          String?
+  phone              String?
+  preferredDistricts String?  // Comma separated
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([district, city])
+}
+
+model CompanyProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName        String
+  registrationNumber String?
+  industry           String
+  website            String?
+  description        String
+  logoUrl            String?
+  contactPerson      String
+  contactPhone       String
+  address            String
+  district           String
+  city               String
+  isApproved         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([industry, district, city])
+}
+
+model Internship {
+  id                   String           @id @default(uuid())
+  employerId           String
+  employer             User             @relation("EmployerInternships", fields: [employerId], references: [id], onDelete: Cascade)
+  title                String
+  department           String
+  description          String
+  requirements         String
+  responsibilities     String?
+  skills               String           // Comma separated or JSON string
+  stipend              Int              @default(0) // Monthly in INR
+  durationWeeks        Int              @default(12)
+  slots                Int              @default(1)
+  deadline             DateTime
+  internshipType       InternshipType   @default(ON_SITE)
+  status               InternshipStatus @default(ACTIVE)
+  moderationComment    String?
+  
+  // Geofence & Location
+  district             String
+  city                 String
+  address              String
+  latitude             Float            // Office GPS Latitude
+  longitude            Float            // Office GPS Longitude
+  geofenceRadiusMeters Float            @default(150.0) // Permitted radius in meters
+
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  applications         InternshipApplication[]
+  assignments          InternshipAssignment[]
+  attendanceRecords    AttendanceRecord[]
+  attendanceAttempts   AttendanceAttempt[]
+
+  @@index([district, city, status])
+  @@index([employerId])
+  @@index([status, internshipType])
+}
+
+model InternshipApplication {
+  id           String            @id @default(uuid())
+  internshipId String
+  internship   Internship        @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User              @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+  coverLetter  String?
+  resumeUrl    String?
+  status       ApplicationStatus @default(APPLIED)
+  feedback     String?
+  appliedAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  assignment   InternshipAssignment?
+
+  @@unique([internshipId, studentId])
+  @@index([studentId, status])
+  @@index([internshipId, status])
+}
+
+model InternshipAssignment {
+  id                String                 @id @default(uuid())
+  internshipId      String
+  internship        Internship             @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           User                   @relation("StudentAssignments", fields: [studentId], references: [id], onDelete: Cascade)
+  applicationId     String                 @unique
+  application       InternshipApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  startDate         DateTime
+  endDate           DateTime
+  status            AssignmentStatus       @default(ACTIVE)
+  supervisorName    String?
+  supervisorContact String?
+  assignedAt        DateTime               @default(now())
+
+  attendanceRecords AttendanceRecord[]
+
+  @@unique([internshipId, studentId])
+  @@index([studentId, status])
+  @@index([internshipId, status])
+}
+
+model AttendanceRecord {
+  id                 String               @id @default(uuid())
+  assignmentId       String
+  assignment         InternshipAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId          String
+  student            User                 @relation("StudentAttendance", fields: [studentId], references: [id], onDelete: Cascade)
+  internshipId       String
+  internship         Internship           @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  
+  date               String               // Format: YYYY-MM-DD
+  checkInTime        DateTime
+  checkOutTime       DateTime?
+  
+  checkInLat         Float
+  checkInLng         Float
+  checkInAccuracy    Float
+  checkInDistance    Float
+  
+  checkOutLat        Float?
+  checkOutLng        Float?
+  checkOutAccuracy   Float?
+  checkOutDistance   Float?
+
+  status             AttendanceStatus     @default(PRESENT)
+  verificationMethod String               @default("GPS_GEOFENCE")
+  notes              String?
+
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([studentId, internshipId, date])
+  @@index([internshipId, date])
+  @@index([studentId, date])
+}
+
+model AttendanceAttempt {
+  id                String       @id @default(uuid())
+  studentId         String
+  student           User         @relation("StudentAttempts", fields: [studentId], references: [id], onDelete: Cascade)
+  internshipId      String
+  internship        Internship   @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  
+  attemptType       AttemptType
+  reportedLat       Float
+  reportedLng       Float
+  reportedAccuracy  Float
+  calculatedDistance Float
+  allowedRadius     Float
+  isSuccess         Boolean
+  rejectionReason   String?
+  clientIp          String?
+  userAgent         String?
+  attemptedAt       DateTime     @default(now())
+
+  @@index([studentId, attemptedAt])
+  @@index([internshipId, attemptedAt])
+  @@index([isSuccess])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("INFO")
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  details    String?  // JSON formatted details
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([action, entityType])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
